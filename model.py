@@ -1,35 +1,65 @@
+import torch
 import torch.nn as nn
 
 from evoformer import EvoFormer
 from input_embedder import InputEmbedder
+from structure import StructureModule
 
 
-class Part1Model(nn.Module):
-    def __init__(self, num_blocks, c_m, h_m, w_m, a_m, heads_m, c_z, h_z, w_z, a_z, heads_z, c_s):
+class Alphafold2(nn.Module):
+    def __init__(
+        self,
+        num_blocks,
+        num_clust,
+        c_m,
+        a_m,
+        heads_m,
+        c_z,
+        a_z,
+        heads_z,
+        c_s,
+        num_layers_structure,
+        c_structure,
+    ):
         super().__init__()
-        
-        self.input_embedder = InputEmbedder(c_m=c_m, c_z=c_z, n_clust=h_m)
-        
-        self.evoformer = EvoFormer(num_blocks=num_blocks,
-                                   c_m=c_m,
-                                   h_m=h_m,
-                                   w_m=w_m,
-                                   a_m=a_m,
-                                   heads_m=heads_m,
-                                   c_z=c_z,
-                                   h_z=h_z,
-                                   w_z=w_z,
-                                   a_z=a_z,
-                                   heads_z=heads_z,
-                                   c_s=c_s)
-        
-        self.dist_head = 0
-        self.angle_head = 0
-        
-    def forward(self, msa_rep, pair_rep):
-        msa_rep, pair_rep = self.evoformer(msa_rep, pair_rep)
-        
-        dist_pred = self.dist_head(...)
-        angle_pred = self.angle_head(...)
-        
-        return dist_pred, angle_pred
+
+        self.input_embedder = InputEmbedder(c_m=c_m, c_z=c_z, num_clust=num_clust)
+
+        self.evoformer = EvoFormer(
+            num_blocks=num_blocks,
+            c_m=c_m,
+            a_m=a_m,
+            heads_m=heads_m,
+            c_z=c_z,
+            a_z=a_z,
+            heads_z=heads_z,
+            c_s=c_s,
+        )
+
+        self.structure = StructureModule(
+            c_s=c_s,
+            c_z=c_z,
+            n_layer=num_layers_structure,
+            c=c_structure,
+        )
+
+    def forward(self, seq, evo, t_true, alpha_true, x_true, mask):
+        residue_index = (
+            torch.arange(seq.shape[-1], dtype=int)
+            .expand(seq.shape[0], -1)
+            .to(seq.device)
+        )
+        msa_rep, pair_rep = self.input_embedder(seq, residue_index, evo)
+
+        msa_rep, pair_rep, s = self.evoformer(msa_rep, pair_rep)
+
+        x, loss_aux = self.structure(
+            s_initial=s,
+            z=pair_rep,
+            t_true=t_true,
+            alpha_true=alpha_true,
+            x_true=x_true,
+            mask=mask,
+        )
+
+        return x, loss_aux
