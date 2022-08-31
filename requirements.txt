@@ -1,0 +1,6 @@
+apex==0.9.10dev
+einops==0.4.1
+matplotlib==3.5.3
+sidechainnet==0.7.5
+torch==1.12.1
+tqdm==4.62.2
